@@ -1,0 +1,85 @@
+{
+  "format": 1,
+  "title": {
+    "en": "Mnemosyne DSH Plugins",
+    "zh": "Mnemosyne DSH 插件"
+  },
+  "description": {
+    "en": "DeepSeek Harness plugins published by MnemosyneOS.",
+    "zh": "MnemosyneOS 发布的 DeepSeek Harness 插件。"
+  },
+  "metadata": {
+    "categories": {
+      "model-inference": {
+        "title": {
+          "en": "Model inference",
+          "zh": "模型推理"
+        }
+      }
+    },
+    "labels": {
+      "verified": {
+        "title": {
+          "en": "Verified",
+          "zh": "已验证"
+        }
+      }
+    },
+    "sortKeys": {
+      "stars": {
+        "title": {
+          "en": "Stars",
+          "zh": "收藏"
+        },
+        "order": "desc"
+      }
+    }
+  },
+  "plugins": [
+    {
+      "name": "dsh-agent-llm",
+      "title": {
+        "en": "Agent LLM Bridge (WorkBuddy / WorkBuddy AI / Hermes)",
+        "zh": "Agent 模型桥接（WorkBuddy / WorkBuddy AI / Hermes）"
+      },
+      "description": {
+        "en": "Reuses the WorkBuddy, WorkBuddy AI and Hermes Agent accounts already signed in on this computer as DeepSeek Harness model providers, showing each model credit multiplier and free quota exactly as those agents do.",
+        "zh": "把本机已登录的 WorkBuddy、WorkBuddy AI 与 Hermes Agent 账号直接接入 DeepSeek Harness，模型选择处显示与对应 Agent 一致的模型名称、积分倍率与免费额度，消耗对应账号积分。"
+      },
+      "author": "MnemosyneOS",
+      "homepage": "https://github.com/MnemosyneOS/dsh-agent-llm",
+      "repository": {
+        "url": "https://github.com/MnemosyneOS/dsh-agent-llm"
+      },
+      "metadata": {
+        "category": "model-inference",
+        "keywords": [
+          "dsh-plugin",
+          "deepseek-harness",
+          "llm-provider",
+          "model-inference",
+          "workbuddy",
+          "hermes-agent"
+        ],
+        "labels": [
+          "verified"
+        ],
+        "sortKeys": {}
+      },
+      "versions": [
+        {
+          "version": "1.1.0",
+          "publishTimestamp": 1792610400,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/MnemosyneOS/dsh-agent-llm",
+            "commit": "f3b34a6edea4c3be816bd089b2c4ad6662a24920"
+          },
+          "engines": {
+            "dsh": ">=0.2.0"
+          }
+        }
+      ]
+    }
+  ]
+}
