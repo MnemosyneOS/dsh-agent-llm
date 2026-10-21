@@ -1,0 +1,4 @@
+- insert:
+    - id: dsh-agent-llm
+      name: dsh-agent-llm
+      config: {}

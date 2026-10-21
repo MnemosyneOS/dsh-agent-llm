@@ -1,0 +1,60 @@
+{
+  "name": "dsh-agent-llm",
+  "version": "1.1.0",
+  "private": false,
+  "type": "module",
+  "description": "DeepSeek Harness 插件：把本机已登录的 WorkBuddy / WorkBuddy AI / Hermes Agent 大模型接入 DSH 模型库，显示与 Agent 一致的模型名称、积分倍率与免费额度。",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "lib/*.js",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-model-selection"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MnemosyneOS/dsh-agent-llm.git"
+  },
+  "homepage": "https://github.com/MnemosyneOS/dsh-agent-llm#readme",
+  "bugs": {
+    "url": "https://github.com/MnemosyneOS/dsh-agent-llm/issues"
+  },
+  "author": "MnemosyneOS",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "llm-provider",
+    "model-inference",
+    "workbuddy",
+    "workbuddy-ai",
+    "hermes-agent",
+    "nous"
+  ],
+  "license": "MIT"
+}

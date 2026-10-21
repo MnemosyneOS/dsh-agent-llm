@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Agent 模型桥接（WorkBuddy / WorkBuddy AI / Hermes）",
+    "description": "把本机已登录的 WorkBuddy、WorkBuddy AI 与 Hermes Agent 账号直接接入 DeepSeek Harness，模型选择处显示与对应 Agent 一致的模型名称、积分倍率与免费额度，消耗对应账号积分。"
+  }
+}

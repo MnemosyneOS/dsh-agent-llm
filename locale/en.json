@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Agent LLM Bridge (WorkBuddy / WorkBuddy AI / Hermes)",
+    "description": "Reuses the WorkBuddy, WorkBuddy AI and Hermes Agent accounts already signed in on this computer as DeepSeek Harness model providers, showing each model's credit multiplier and free quota exactly as those agents do."
+  }
+}
