@@ -73,7 +73,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/MnemosyneOS/dsh-agent-llm",
-            "commit": "f3b34a6edea4c3be816bd089b2c4ad6662a24920"
+            "commit": "3feaa304568be421bb168c505ff609a93ad8f27d"
           },
           "engines": {
             "dsh": ">=0.2.0"

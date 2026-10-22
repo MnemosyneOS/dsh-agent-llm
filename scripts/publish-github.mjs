@@ -37,7 +37,7 @@ async function api(path, init = {}) {
   return body;
 }
 
-const IGNORE_DIRS = new Set(['node_modules', '.git', '.github', 'recon', '.dsh-e2e-tmp']);
+const IGNORE_DIRS = new Set(['node_modules', '.git', '.github']);
 const IGNORE_FILES = new Set(['.DS_Store']);
 
 async function walk(root, current = root, out = []) {

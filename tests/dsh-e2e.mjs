@@ -1,25 +1,27 @@
 #!/usr/bin/env node
 /**
- * End-to-end verification through the LIVE DeepSeek Harness Host.
+ * 经 DSH 本体做端到端验证：新建临时会话，依次切换三个 provider 的免费模型，
+ * 读取会话投影确认「实际使用的 provider/model」与回答。
  *
- * Creates one temporary DSH session, selects each bridged provider in turn
- * (WorkBuddy AI → WorkBuddy → Hermes Agent), sends a one-line prompt, and
- * reads the session projection cache to prove the answer came from that exact
- * provider/model. Only free models are used.
+ * 需要本机正在运行 `dsh web`。会自动从 DSH 启动日志里取当前访问令牌，
+ * 也可以用环境变量覆盖：
+ *   DSH_WEB_URL   例如 http://127.0.0.1:3080
+ *   DSH_WEB_TOKEN 访问令牌
+ *   DSH_WEB_LOG   dsh web 的输出日志路径（默认扫描常见位置）
  *
- * Run: node tests/dsh-e2e.mjs
+ * 只使用免费模型；测试会话结束后自动归档。
  */
-import { readFile, readdir, mkdir } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
-import { zstdDecompressSync } from 'node:zlib';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { zstdDecompressSync } from 'node:zlib';
 
-const HOME = process.env.USERPROFILE;
-const WORKSPACE = 'C:\\AI_Workspace\\01_Agents\\deepseek-harness\\Mnemosyne OS';
-const CWD = join(WORKSPACE, '.dsh-e2e-tmp');
-const LOG = 'C:\\AI_Workspace\\01_Agents\\dsh-ops\\dsh-web.log';
-const PROJ_DIR = join(HOME, '.dsh', 'storages', 'session_projcache', 'sessions');
+const HOME = homedir();
+const DSH_HOME = process.env.DSH_HOME || join(HOME, '.dsh');
+const PROJ_DIR = join(DSH_HOME, 'storages', 'session_projcache', 'sessions');
+const SESSIONS_DIR = join(DSH_HOME, 'sessions');
 
 const TARGETS = [
   { provider: 'workbuddy', model: 'hy3', label: 'WorkBuddy' },
@@ -27,30 +29,50 @@ const TARGETS = [
   { provider: 'hermes-agent', model: 'meituan/longcat-2.5-preview:free', label: 'Hermes Agent' },
 ];
 
-function uuid() {
-  return crypto.randomUUID();
-}
 function rpcId() {
   return createHash('sha1').update(`${Date.now()}-${Math.random()}`).digest('hex');
 }
 
+/** 从 dsh web 日志里找最近一次带令牌的访问 URL。 */
+async function findWebUrl() {
+  const candidates = [
+    process.env.DSH_WEB_LOG,
+    join(HOME, 'dsh-web.log'),
+    join(HOME, '.dsh', 'dsh-web.log'),
+    join(HOME, 'dsh', 'web.log'),
+  ].filter((value) => typeof value === 'string' && value.length > 0);
+  for (const path of candidates) {
+    if (!existsSync(path)) continue;
+    const text = await readFile(path, 'utf8');
+    const matches = [...text.matchAll(/dsh web: (http:\/\/\S+\?token=[A-Za-z0-9_-]+)/g)];
+    if (matches.length > 0) return matches[matches.length - 1][1];
+  }
+  return undefined;
+}
+
 async function auth() {
-  const text = await readFile(LOG, 'utf8');
-  const matches = [...text.matchAll(/dsh web: (http:\/\/\S+\?token=[A-Za-z0-9_-]+)/g)];
-  if (matches.length === 0) throw new Error('no dsh web URL/token in log');
-  const url = matches[matches.length - 1][1];
+  const token = process.env.DSH_WEB_TOKEN;
+  const url = process.env.DSH_WEB_URL || (await findWebUrl());
+  const origin = url ? new URL(url).origin : 'http://127.0.0.1:3080';
+  if (token) return { cookie: `dsh_web_token=${token}`, origin };
+  if (!url) {
+    throw new Error(
+      '找不到 dsh web 访问地址：请设置 DSH_WEB_URL / DSH_WEB_TOKEN，或用 DSH_WEB_LOG 指定 dsh web 日志路径',
+    );
+  }
   const response = await fetch(url, { redirect: 'manual' });
   const cookies = response.headers.getSetCookie ? response.headers.getSetCookie() : [];
   const cookie = cookies.map((value) => value.split(';')[0]).join('; ');
-  if (!cookie) throw new Error(`token exchange returned ${response.status} without a cookie`);
-  return cookie;
+  if (!cookie) throw new Error(`令牌交换失败（HTTP ${response.status}）`);
+  return { cookie, origin };
 }
 
-function makeRpc(cookie) {
+function makeRpc(session) {
+  const { cookie, origin } = session;
   return async function rpc(channel, method, args = {}) {
     const endpoint = `${channel}/${method}`;
     const body = { type: 'client-request', rpcId: rpcId(), method: endpoint, payload: { args } };
-    const response = await fetch(`http://127.0.0.1:3080/api/${endpoint}`, {
+    const response = await fetch(`${origin}/api/${endpoint}`, {
       method: 'POST',
       headers: { cookie, 'content-type': 'application/json' },
       body: JSON.stringify(body),
@@ -61,33 +83,32 @@ function makeRpc(cookie) {
     try {
       parsed = JSON.parse(text);
     } catch {
-      throw new Error(`${channel}/${method}: HTTP ${response.status} ${text.slice(0, 200)}`);
+      throw new Error(`${endpoint}: HTTP ${response.status} ${text.slice(0, 200)}`);
     }
     if (!parsed.result || parsed.result.ok !== true) {
       const error = parsed.result && parsed.result.error;
-      throw new Error(`${channel}/${method}: ${error ? `${error.code}: ${error.message}` : 'rejected'}`);
+      throw new Error(`${endpoint}: ${error ? `${error.code}: ${error.message}` : 'rejected'}`);
     }
     return parsed.result.value;
   };
 }
 
 async function projectionOf(sessionId) {
-  const candidates = [join(PROJ_DIR, `${sessionId}.json`), join(PROJ_DIR, `session-${sessionId}.json`)];
-  for (const path of candidates) {
+  for (const path of [join(PROJ_DIR, `${sessionId}.json`), join(PROJ_DIR, `session-${sessionId}.json`)]) {
     try {
       return JSON.parse(await readFile(path, 'utf8'));
     } catch {
-      /* try the next naming form */
+      /* 换一种命名再试 */
     }
   }
   return null;
 }
 
+/** 从会话日志里取最后一次尝试的失败原因，便于定位 provider 报错。 */
 function lastAttemptError(sessionId) {
-  const root = join(HOME, '.dsh', 'sessions');
   try {
-    for (const dir of readdirSync(root)) {
-      const candidate = join(root, dir, sessionId);
+    for (const dir of readdirSync(SESSIONS_DIR)) {
+      const candidate = join(SESSIONS_DIR, dir, sessionId);
       if (!existsSync(candidate)) continue;
       const file = join(candidate, 'session.v4.jsonl.zstd');
       if (!existsSync(file)) continue;
@@ -104,36 +125,30 @@ function lastAttemptError(sessionId) {
         const end = k + 1 < offsets.length ? offsets[k + 1] : buffer.length;
         try {
           lines.push(...zstdDecompressSync(buffer.subarray(offsets[k], end)).toString('utf8').split('\n'));
-        } catch {}
+        } catch {
+          /* 半写入的帧跳过 */
+        }
       }
       for (let i = lines.length - 1; i >= 0; i -= 1) {
         const line = lines[i];
         if (!line || !line.includes('assistant/attempt')) continue;
         try {
           const event = JSON.parse(line);
-          const stream = (event.data && event.data.stream) || [];
-          for (const item of stream) {
+          for (const item of (event.data && event.data.stream) || []) {
             const finish = item && item.chunk && item.chunk.finish;
-            if (finish && finish.reason && finish.reason.kind === 'error') return finish.reason.failure && finish.reason.failure.message;
+            if (finish && finish.reason && finish.reason.kind === 'error') {
+              return finish.reason.failure && finish.reason.failure.message;
+            }
           }
-        } catch {}
+        } catch {
+          /* 忽略无法解析的行 */
+        }
       }
     }
-  } catch {}
-  return undefined;
-}
-
-async function retry(operation, { attempts = 20, delayMs = 1000, what = 'operation' } = {}) {
-  let lastError;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
+  } catch {
+    /* 诊断信息缺失不影响主流程 */
   }
-  throw new Error(`${what} failed after ${attempts} attempts: ${lastError && lastError.message ? lastError.message : lastError}`);
+  return undefined;
 }
 
 async function waitForTurn(sessionId, turnNumber, timeoutMs = 180000) {
@@ -144,82 +159,76 @@ async function waitForTurn(sessionId, turnNumber, timeoutMs = 180000) {
     const rows = last && last.record && last.record.rows;
     const turns = rows && rows.turnOutline && rows.turnOutline.val && rows.turnOutline.val.turns;
     const stats = rows && rows.sessionStats && rows.sessionStats.val;
-    if (turns && turns.length >= turnNumber) {
-      const turn = turns[turnNumber - 1];
-      if (turn && stats && stats.openStep === null) {
-        return { turn, selection: rows.modelSelection && rows.modelSelection.val };
-      }
+    if (turns && turns.length >= turnNumber && stats && stats.openStep === null) {
+      return { turn: turns[turnNumber - 1], selection: rows.modelSelection && rows.modelSelection.val };
     }
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
-  throw new Error(`turn ${turnNumber} did not settle; last projection: ${JSON.stringify(last && last.record && last.record.rows && last.record.rows.turnOutline && last.record.rows.turnOutline.val)}`.slice(0, 500));
+  const rows = last && last.record && last.record.rows;
+  throw new Error(
+    `第 ${turnNumber} 轮未结束；最后状态：${JSON.stringify(rows && rows.turnOutline && rows.turnOutline.val)}`.slice(0, 400),
+  );
 }
 
 async function main() {
-  await mkdir(CWD, { recursive: true });
-  const cookie = await auth();
-  const rpc = makeRpc(cookie);
+  const session = await auth();
+  const rpc = makeRpc(session);
+  const cwd = join(DSH_HOME, 'tmp', 'dsh-agent-llm-e2e');
+  await mkdir(cwd, { recursive: true });
 
   const catalog = await rpc('session', 'modelCatalog');
   const routed = new Set(catalog.routableProviders ?? []);
-  for (const target of TARGETS) {
-    if (!routed.has(target.provider)) throw new Error(`provider not routable in model library: ${target.provider}`);
-  }
-  console.log('model library providers:', [...routed].join(', '));
+  const targets = TARGETS.filter((target) => routed.has(target.provider));
+  if (targets.length === 0) throw new Error('模型库中没有本插件注册的 provider');
+  console.log('模型库 provider:', [...routed].join(', '));
 
-  const created = await rpc('session', 'create', { request: { cwd: CWD, agentPreset: 'cordis' } });
+  const created = await rpc('session', 'create', { request: { cwd, agentPreset: 'cordis' } });
   const sessionId = created.sessionId;
-  console.log('test session:', sessionId);
-  try {
-    await rpc('session', 'rename', { request: { sessionId, title: 'dsh-agent-llm · 三 Agent 模型连通性验证' } }).catch(() => undefined);
-  } catch {}
+  console.log('测试会话:', sessionId);
 
-  const only = typeof process.env.ONLY === 'string' && process.env.ONLY.length > 0 ? new Set(process.env.ONLY.split(',')) : undefined;
-  const targets = only ? TARGETS.filter((target) => only.has(target.provider)) : TARGETS;
   const results = [];
-  for (let index = 0; index < targets.length; index += 1) {
-    const target = targets[index];
-    const turnNumber = index + 1;
-    try {
-      const selected = await retry(
-        () => rpc('session', 'selectModel', { request: { sessionId, provider: target.provider, model: target.model } }),
-        { what: 'selectModel' },
-      );
-      console.log(`\n[${target.label}] selected`, JSON.stringify(selected.selected));
-      await retry(
-        () =>
-          rpc('session', 'prompt', {
-            request: {
-              requestId: uuid(),
-              sessionId,
-              mode: 'queue',
-              content: [{ type: 'text', text: `只回复这一串字符，不要调用工具：${target.label.replace(/\s+/g, '')}-OK` }],
-              clientTimeZone: 'Asia/Shanghai',
-            },
-          }),
-        { what: 'prompt', attempts: 3 },
-      );
-      const settled = await waitForTurn(sessionId, turnNumber);
-      const used = settled.selection && settled.selection.lastUsed;
-      const reply = (settled.turn.response || '').trim();
-      const ok = used && used.provider === target.provider && used.model === target.model && reply.length > 0;
-      console.log(`  used: ${used ? `${used.provider}/${used.model}` : '(unknown)'}`);
-      console.log(`  reply: ${JSON.stringify(reply.slice(0, 120))}`);
-      if (!ok) {
-        const failure = lastAttemptError(sessionId);
-        if (failure) console.log(`  provider failure: ${failure.slice(0, 300)}`);
+  try {
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index];
+      const turnNumber = index + 1;
+      try {
+        await rpc('session', 'selectModel', {
+          request: { sessionId, provider: target.provider, model: target.model },
+        });
+        console.log(`\n[${target.label}] 已选择 ${target.provider}/${target.model}`);
+        await rpc('session', 'prompt', {
+          request: {
+            requestId: randomUUID(),
+            sessionId,
+            mode: 'queue',
+            content: [{ type: 'text', text: `只回复这一串字符，不要调用工具：${target.label.replace(/\s+/g, '')}-OK` }],
+            clientTimeZone: 'Asia/Shanghai',
+          },
+        });
+        const settled = await waitForTurn(sessionId, turnNumber);
+        const used = settled.selection && settled.selection.lastUsed;
+        const reply = ((settled.turn && settled.turn.response) || '').trim();
+        const ok = used && used.provider === target.provider && used.model === target.model && reply.length > 0;
+        console.log(`  实际路由: ${used ? `${used.provider}/${used.model}` : '(未知)'}`);
+        console.log(`  回答: ${JSON.stringify(reply.slice(0, 120))}`);
+        if (!ok) {
+          const failure = lastAttemptError(sessionId);
+          if (failure) console.log(`  provider 报错: ${failure.slice(0, 300)}`);
+        }
+        console.log(`  ${ok ? 'PASS' : 'FAIL'}`);
+        results.push({ target, used, reply: reply.slice(0, 300), ok });
+      } catch (error) {
+        console.log(`\n[${target.label}] ERROR ${error && error.message ? error.message : error}`);
+        results.push({ target, ok: false, error: String(error && error.message ? error.message : error) });
       }
-      console.log(`  ${ok ? 'PASS' : 'FAIL'}`);
-      results.push({ target, used, reply: reply.slice(0, 300), ok });
-    } catch (error) {
-      console.log(`\n[${target.label}] ERROR ${error && error.message ? error.message : error}`);
-      results.push({ target, ok: false, error: String(error && error.message ? error.message : error) });
     }
+  } finally {
+    await rpc('workspace', 'archiveSession', { request: { sessionId, stopActivity: true } }).catch(() => undefined);
   }
 
-  const output = { sessionId, at: new Date().toISOString(), results };
-  console.log('\nRESULT', JSON.stringify(output));
-  if (results.some((entry) => !entry.ok)) process.exitCode = 1;
+  const failed = results.filter((entry) => !entry.ok);
+  console.log(`\n结果: ${results.length - failed.length}/${results.length} 通过`);
+  if (failed.length > 0) process.exitCode = 1;
 }
 
 main().catch((error) => {

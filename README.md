@@ -47,11 +47,12 @@ dsh plugin --profile web add github:MnemosyneOS/dsh-agent-llm#<commit-sha>
 
 | 目标 | 探测顺序 |
 | --- | --- |
-| WorkBuddy 数据根 | `WORKBUDDY_AI_HOME` → `%USERPROFILE%\.workbuddy-ai` |
+| WorkBuddy AI 数据根 | `WORKBUDDY_AI_HOME` → `%USERPROFILE%\.workbuddy-ai` |
 | WorkBuddy 数据根 | `WORKBUDDY_HOME` → `%USERPROFILE%\.workbuddy` |
-| WorkBuddy 可执行文件 | `DSH_AGENT_LLM_WORKBUDDY_AI_EXE` / `DSH_AGENT_LLM_WORKBUDDY_EXE` → Windows 卸载表 `InstallLocation` → `%LOCALAPPDATA%\Programs\{WorkBuddyAI,WorkBuddy}` → `C:\AI_Workspace\01_Agents\...` |
-| Hermes 数据根 | `HERMES_HOME` → `~/.hermes` → `~/HermesAgent/home` → `%LOCALAPPDATA%\Programs\Hermes\home` → `C:\AI_Workspace\01_Agents\HermesAgent\home`（以存在 `auth.json` 或 `config.yaml` 为准） |
+| WorkBuddy 可执行文件 | `DSH_AGENT_LLM_WORKBUDDY_AI_EXE` / `DSH_AGENT_LLM_WORKBUDDY_EXE` → Windows 卸载表 `InstallLocation` → `%LOCALAPPDATA%\Programs\{WorkBuddyAI,WorkBuddy}` → 用户目录与盘符下的浅层目录扫描 |
+| Hermes 数据根 | `HERMES_HOME` → `~/.hermes` → `~/HermesAgent/home` → `%LOCALAPPDATA%\Programs\Hermes\home` → 用户目录与盘符下的浅层目录扫描（以存在 `auth.json` 或 `config.yaml` 为准） |
 
+浅层扫描只在前面几项都失败时触发，深度上限 3 层、只看目录名，不读取文件内容。
 装在非标准位置时，用下面的 `config` 显式指定即可。
 
 ## 使用
