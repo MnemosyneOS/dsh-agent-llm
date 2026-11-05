@@ -69,11 +69,11 @@
       "versions": [
         {
           "version": "1.2.0",
-          "publishTimestamp": 1792610400,
+          "publishTimestamp": 1793864200,
           "source": {
             "type": "git",
             "url": "https://github.com/MnemosyneOS/dsh-agent-llm",
-            "commit": "3feaa304568be421bb168c505ff609a93ad8f27d"
+            "commit": "af10b25244600b837723961a133676b6a9c2515e"
           },
           "engines": {
             "dsh": ">=0.2.0"
