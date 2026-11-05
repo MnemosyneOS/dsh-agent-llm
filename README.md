@@ -16,10 +16,14 @@ DeepSeek Harness（DSH）的模型库。装好后在会话框右下角的模型�
 
 ### 通过 SkillHub 插件市场
 
-在 DSH 的插件市场里搜索 `dsh-agent-llm`，或直接安装：
+在插件广场 / 对话内插件搜索里搜 `dsh-agent-llm`；若未命中，可按 owner `MnemosyneOS` 或分类「模型推理」浏览。也可直接指定：
 
 - owner：`MnemosyneOS`
 - name：`dsh-agent-llm`
+
+### 通过 DSH 内置插件市场
+
+DSH 内置插件市场不自动抓取 GitHub，需先把本仓库的 `market-index.json` URL 加入「插件市场 → 索引源」设置，之后才能在 Discover 里检索到。
 
 ### 直接安装 GitHub 仓库
 
@@ -47,10 +51,10 @@ dsh plugin --profile web add github:MnemosyneOS/dsh-agent-llm#<commit-sha>
 
 | 目标 | 探测顺序 |
 | --- | --- |
-| WorkBuddy AI 数据根 | `WORKBUDDY_AI_HOME` → `%USERPROFILE%\.workbuddy-ai` |
-| WorkBuddy 数据根 | `WORKBUDDY_HOME` → `%USERPROFILE%\.workbuddy` |
-| WorkBuddy 可执行文件 | `DSH_AGENT_LLM_WORKBUDDY_AI_EXE` / `DSH_AGENT_LLM_WORKBUDDY_EXE` → Windows 卸载表 `InstallLocation` → `%LOCALAPPDATA%\Programs\{WorkBuddyAI,WorkBuddy}` → 用户目录与盘符下的浅层目录扫描 |
-| Hermes 数据根 | `HERMES_HOME` → `~/.hermes` → `~/HermesAgent/home` → `%LOCALAPPDATA%\Programs\Hermes\home` → 用户目录与盘符下的浅层目录扫描（以存在 `auth.json` 或 `config.yaml` 为准） |
+| WorkBuddy AI 数据根 | `WORKBUDDY_AI_HOME` → 用户主目录下的 `.workbuddy-ai` |
+| WorkBuddy 数据根 | `WORKBUDDY_HOME` → 用户主目录下的 `.workbuddy` |
+| WorkBuddy 可执行文件 | `DSH_AGENT_LLM_WORKBUDDY_AI_EXE` / `DSH_AGENT_LLM_WORKBUDDY_EXE` → Windows 卸载表 `InstallLocation` → 常见安装目录 → 用户目录与盘符下的浅层目录扫描 |
+| Hermes 数据根 | `HERMES_HOME` → 用户主目录下的 `.hermes` / `HermesAgent/home` → 常见安装目录 → 用户目录与盘符下的浅层目录扫描（以存在 `auth.json` 或 `config.yaml` 为准） |
 
 浅层扫描只在前面几项都失败时触发，深度上限 3 层、只看目录名，不读取文件内容。
 装在非标准位置时，用下面的 `config` 显式指定即可。
@@ -69,13 +73,12 @@ dsh plugin --profile web add github:MnemosyneOS/dsh-agent-llm#<commit-sha>
 
 | Agent | 模型清单来源 | 积分/倍率来源 |
 | --- | --- | --- |
-| WorkBuddy AI | `%USERPROFILE%\.workbuddy-ai\cache\acc-product-config-v3.json` | 同文件 `models[].credits` + `modelPromotions`（按 Asia/Shanghai 日期与每日时段计算生效折扣） |
-| WorkBuddy | `%USERPROFILE%\.workbuddy\cache\acc-product-config-v3.json` | 同上 |
-| Hermes Agent | `$HERMES_HOME\cache\nous_recommended_cache.json` + `context_length_cache.yaml`（在线时用 Nous `/v1/models` 校正） | Nous 免费层：`:free` 模型为 `免费`；付费层显示付费模型 |
+| WorkBuddy AI | 数据根下的 `cache/acc-product-config-v3.json` | 同文件 `models[].credits` + `modelPromotions`（按 Asia/Shanghai 日期与每日时段计算生效折扣） |
+| WorkBuddy | 数据根下的 `cache/acc-product-config-v3.json` | 同上 |
+| Hermes Agent | 数据根下的 `cache/nous_recommended_cache.json` + `context_length_cache.yaml`（在线时用 Nous `/v1/models` 校正） | Nous 免费层：`:free` 模型为 `免费`；付费层显示付费模型 |
 
-WorkBuddy 的登录态在
-`%LOCALAPPDATA%\CodeBuddyExtension\Data\Public\auth\workbuddy-desktop-ai.info` /
-`workbuddy-desktop.info`，token 字段是 AES-256-GCM 密文；插件调用已安装的
+WorkBuddy 的登录态在 Agent 公共数据目录的 `auth` 子目录下（`workbuddy-desktop-ai.info` /
+`workbuddy-desktop.info`），token 字段是 AES-256-GCM 密文；插件调用已安装的
 `WorkBuddyAI.exe`（`ELECTRON_RUN_AS_NODE=1`，无窗口、只读）取得 at-rest 密钥后在本进程内解密，
 **不落盘、不打印**。
 
@@ -94,17 +97,18 @@ Hermes 网关运行中由 Hermes 自己续期；网关未运行时插件用同�
       config:
         workbuddyAi:
           enabled: true
-          home: 'C:\Users\<you>\.workbuddy-ai'
-          exe: 'C:\Program Files\WorkBuddyAI\WorkBuddyAI.exe'
-          authFile: 'C:\Users\<you>\AppData\Local\CodeBuddyExtension\Data\Public\auth\workbuddy-desktop-ai.info'
+          # 路径请用本机实际安装位置，或用下方环境变量代替
+          home: '/path/to/.workbuddy-ai'
+          exe: '/path/to/WorkBuddyAI.exe'
+          authFile: '/path/to/workbuddy-desktop-ai.info'
           appVersion: '5.8.4'
         workbuddy:
           enabled: true
-          home: 'C:\Users\<you>\.workbuddy'
-          exe: 'C:\Users\<you>\AppData\Local\Programs\WorkBuddy\WorkBuddy.exe'
+          home: '/path/to/.workbuddy'
+          exe: '/path/to/WorkBuddy.exe'
         hermes:
           enabled: true
-          home: 'C:\Users\<you>\HermesAgent\home'
+          home: '/path/to/HermesAgent/home'
           allowRefresh: true   # false = 不自动续期，仅使用未过期的 Nous token
 ```
 
@@ -120,10 +124,11 @@ Hermes 网关运行中由 Hermes 自己续期；网关未运行时插件用同�
 - Client 端只覆盖 `conversation.input.model.label` 槽位（优先级 `-1`）；若未来槽位 API 变化，
   最坏情况是标签退化为模型名，请求与模型选择本身不受影响。
 
-## 已知限制
+## 图片输入
 
-- **图片不转发**：provider 声明为纯文本，DSH 会把消息中的图片替换为占位文本；模型名/描述仍按
-  Agent 原始能力显示“图像输入”。
+- **图片会转发**：对模型清单声明 `supportsImages: true` 的 WorkBuddy / WorkBuddy AI 模型，插件把 Harness 的持久化图片读取为标准 `data:image/*;base64,...` 的 OpenAI `image_url` 内容块后转发；Hermes 清单中的模型同样按其路由能力发送。
+- 若模型清单未声明图像能力，Harness 会在发送前拒绝图片并提示“当前模型不支持图片”。请切换到模型选择器中明确标注“图像输入”的模型；不要仅依据 Agent 本地缓存中的同名模型判断 DSH 路由能力。
+- 插件不会把图片静默降级为占位文本：附件服务缺失、图片读取失败或网关返回错误会作为请求错误暴露，便于排查。
 - **WorkBuddy 旧版 token 有效期较短**（约 30 天，刷新后约 60 天）。过期后打开一次 WorkBuddy
   桌面端即可自动续期；插件有意不调用 token 刷新接口，避免轮换导致桌面端掉线。
 - **旧版 WorkBuddy 渠道校验兼容**：其网关会拦截系统提示中重复出现的完整品牌词

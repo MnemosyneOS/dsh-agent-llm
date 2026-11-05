@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path';
 import { AgentLlmAdapter } from './lib/adapter.js';
 import { createWorkBuddyConnector } from './lib/workbuddy-connector.js';
 import { createHermesConnector } from './lib/hermes-connector.js';
-import { defaultAuthStores } from './lib/workbuddy-auth.js';
+import { defaultAuthStores, defaultExeCandidates } from './lib/workbuddy-auth.js';
 import {
   discoverHermesHomes,
   discoverWorkBuddyExecutables,
@@ -26,7 +26,10 @@ import {
 import { setDiscoveredExecutables } from './lib/workbuddy-auth.js';
 import { setDiscoveredHermesHome } from './lib/hermes-auth.js';
 
-export const inject = ['llm'];
+/* Attachments is a required runtime seam for image-capable routes. Making it an
+   explicit injection prevents a silently missing parent service from dropping
+   image blocks after admission has already accepted them. */
+export const inject = ['llm', 'attachments'];
 
 function objectOption(value) {
   return value && typeof value === 'object' ? value : {};
@@ -36,12 +39,34 @@ function stringOption(value, fallback) {
   return typeof value === 'string' && value.length > 0 ? value : fallback;
 }
 
+/**
+ * Resolve the desktop app version actually installed on this machine.
+ *
+ * The previous implementation only read `<exe dir>/version` and was called
+ * with an empty executable list at registration time, so every request
+ * advertised the hard-coded fallback (5.8.4) even after the desktop app had
+ * been upgraded. Probing the installer manifest keeps `X-IDE-Version` honest
+ * across upgrades without code changes.
+ */
 function detectAppVersion(exe, fallback) {
-  try {
-    const text = readFileSync(join(dirname(exe), 'version'), 'utf8').trim();
-    if (/^\d+(?:\.\d+)+/.test(text)) return text;
-  } catch {
-    /* Version file is optional. */
+  const roots = [];
+  if (typeof exe === 'string' && exe.length > 0) roots.push(dirname(exe));
+  for (const candidate of defaultExeCandidates()) roots.push(dirname(candidate));
+  for (const root of roots) {
+    try {
+      const manifest = JSON.parse(readFileSync(join(root, 'resources', 'install-manifest.json'), 'utf8'));
+      if (typeof manifest.appVersion === 'string' && /^\d+(?:\.\d+)+/.test(manifest.appVersion)) {
+        return manifest.appVersion;
+      }
+    } catch {
+      /* Manifest is optional (non-Electron installs). */
+    }
+    try {
+      const text = readFileSync(join(root, 'version'), 'utf8').trim();
+      if (/^\d+(?:\.\d+)+/.test(text)) return text;
+    } catch {
+      /* Version file is optional. */
+    }
   }
   return fallback;
 }
@@ -82,6 +107,12 @@ export function apply(ctx, config = {}) {
   const log = ctx.logger;
   const options = resolveOptions(config);
   const connectors = [];
+
+  /* 决定性注入：能力闸门放行后，图片字节须由适配器经此服务读出并内联进请求。
+     Harness 不会自动把 attachments 注入适配器（已在 dsh-llm prepareRoutes 确认），
+     故这里用 ctx.get('attachments') 把服务显式透传到底层连接器与 wire。
+     必须在所有连接器创建之前定义（它们在构造时即捕获此闭包）。 */
+  const resolveAttachments = () => ctx.get('attachments');
 
   /* 本机可执行文件与 Hermes 数据根只探测一次，结果注入到各自的模块里。 */
   const discoveredExes = ctx.effect(() => {
@@ -137,6 +168,7 @@ export function apply(ctx, config = {}) {
           exeCandidates,
           appVersion: detectAppVersion(exeCandidates[0] ?? '', spec.appVersion ?? spec.fallbackVersion),
           log,
+          resolveAttachments,
         }),
       );
     } catch (error) {
@@ -154,6 +186,7 @@ export function apply(ctx, config = {}) {
           home: options.hermes.home,
           allowRefresh: options.hermes.allowRefresh,
           log,
+          resolveAttachments,
         }),
       );
     } catch (error) {
@@ -168,7 +201,7 @@ export function apply(ctx, config = {}) {
     return;
   }
 
-  const adapter = new AgentLlmAdapter(connectors, { log });
+  const adapter = new AgentLlmAdapter(connectors, { log, resolveAttachments });
   const registration = ctx.llm.registerAdapter(
     connectors.map((connector) => connector.provider),
     adapter,
